@@ -1,0 +1,7 @@
+path: sheep-datasets
+train: images/train
+val: images/sheepcounter_valid
+test: images/test
+
+names:
+  0: sheep
