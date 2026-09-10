@@ -9,7 +9,6 @@ cache: ram
 mosaic: 0.0
 val: false
 
-device: 0
 workers: 8
 plots: false
 verbose: false

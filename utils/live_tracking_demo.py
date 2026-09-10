@@ -17,8 +17,7 @@ class LiveCanvas:
     """A remote-Jupyter alternative to cv2.imshow() with latest-frame delivery."""
 
     def __init__(
-        self, fps=30.0, size=(960, 540), display_conf=0.25,
-        jpeg_quality=60, port=8765,
+        self, fps=30.0, size=(960, 540), jpeg_quality=60, port=8765,
     ):
         global _ACTIVE_CANVAS
         if _ACTIVE_CANVAS is not None:
@@ -26,7 +25,6 @@ class LiveCanvas:
 
         self.fps = float(fps or 30.0)
         self.size = tuple(size)
-        self.display_conf = display_conf
         self.jpeg_quality = jpeg_quality
         self.port = port
         self.period = 1 / self.fps
@@ -87,13 +85,12 @@ class LiveCanvas:
         self.ready.set()
         self.loop.run_forever()
 
-    def _draw(self, result, display_conf):
+    def _draw(self, result):
         frame = result.orig_img.copy()
         active = 0
         if result.obb is not None and result.obb.id is not None:
-            keep = result.obb.conf >= display_conf
-            polygons = result.obb.xyxyxyxy[keep].cpu().numpy()
-            ids = result.obb.id[keep].int().cpu().tolist()
+            polygons = result.obb.xyxyxyxy.cpu().numpy()
+            ids = result.obb.id.int().cpu().tolist()
             active = len(ids)
 
             for polygon, track_id in zip(polygons, ids):
@@ -112,10 +109,9 @@ class LiveCanvas:
         )
         return frame
 
-    def write(self, result, display_conf=None):
+    def write(self, result):
         """Render and publish one Ultralytics result without queueing stale frames."""
-        display_conf = self.display_conf if display_conf is None else display_conf
-        rendered = self._draw(result, display_conf)
+        rendered = self._draw(result)
         ok, jpeg = cv2.imencode(
             ".jpg", rendered, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
         )
