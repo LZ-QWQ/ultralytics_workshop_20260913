@@ -35,12 +35,19 @@ class LiveCanvas:
         self.finished = False
 
         width, height = self.size
-        ok, blank = cv2.imencode(".jpg", np.zeros((height, width, 3), dtype=np.uint8))
+        blank = np.full((height, width, 3), 24, dtype=np.uint8)
+        message = "Preparing tracking model..."
+        (text_width, text_height), _ = cv2.getTextSize(message, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 1)
+        cv2.putText(
+            blank, message, ((width - text_width) // 2, (height + text_height) // 2),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (210, 210, 210), 1, cv2.LINE_AA,
+        )
+        ok, blank = cv2.imencode(".jpg", blank)
         self.image = Image(
             value=blank.tobytes() if ok else b"", format="jpeg", width=width, height=height,
             layout=Layout(max_width="100%"),
         )
-        self.status = HTML(value="<span style='font:13px monospace;color:#666'>Starting video…</span>")
+        self.status = HTML(value="<span style='font:13px monospace;color:#666'>Preparing tracking model…</span>")
         self.widget = VBox([self.image, self.status], layout=Layout(width=f"{width}px", max_width="100%"))
 
         _ACTIVE_CANVAS = self
