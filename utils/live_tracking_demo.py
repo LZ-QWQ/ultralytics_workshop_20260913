@@ -44,11 +44,14 @@ class LiveCanvas:
         )
         ok, blank = cv2.imencode(".jpg", blank)
         self.image = Image(
-            value=blank.tobytes() if ok else b"", format="jpeg", width=width, height=height,
-            layout=Layout(max_width="100%"),
+            value=blank.tobytes() if ok else b"", format="jpeg",
+            layout=Layout(width="100%", height="auto", object_fit="contain", overflow="hidden"),
         )
         self.status = HTML(value="<span style='font:13px monospace;color:#666'>Preparing tracking model…</span>")
-        self.widget = VBox([self.image, self.status], layout=Layout(width=f"{width}px", max_width="100%"))
+        self.widget = VBox(
+            [self.image, self.status],
+            layout=Layout(width="100%", max_width=f"{width}px", overflow="hidden"),
+        )
 
         _ACTIVE_CANVAS = self
         display(self.widget)
