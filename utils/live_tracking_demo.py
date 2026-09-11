@@ -1,21 +1,41 @@
 #!/usr/bin/env python3
-"""A live Jupyter widget for frames produced inside a notebook loop."""
+"""A low-latency Jupyter canvas for notebook tracking loops."""
 
+import asyncio
+import json
+import threading
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
-from IPython.display import display
-from ipywidgets import HTML, Image, Layout, VBox
+from aiohttp import web
+from IPython.display import HTML, Javascript, display
+from jupyter_server.serverapp import list_running_servers
 
 
 _ACTIVE_CANVAS = None
 
 
-class LiveCanvas:
-    """A remote-Jupyter alternative to cv2.imshow()."""
+def _jupyter_base_url():
+    """Return the active server base URL without browser-side discovery."""
+    try:
+        servers = list(list_running_servers())
+    except Exception:
+        servers = []
 
-    def __init__(self, fps=30.0, size=(960, 540), jpeg_quality=60):
+    cwd = Path.cwd().resolve()
+    for server in servers:
+        root = server.get("root_dir")
+        if root and cwd.is_relative_to(Path(root).resolve()):
+            return server.get("base_url") or "/"
+    return servers[0].get("base_url", "/") if servers else "/"
+
+
+class LiveCanvas:
+    """Render tracking results with latest-frame WebSocket delivery."""
+
+    def __init__(self, fps=30.0, size=(960, 540), jpeg_quality=60, port=8765):
         global _ACTIVE_CANVAS
         if _ACTIVE_CANVAS is not None:
             _ACTIVE_CANVAS.stop()
@@ -23,23 +43,63 @@ class LiveCanvas:
         self.fps = float(fps or 30.0)
         self.size = tuple(size)
         self.jpeg_quality = jpeg_quality
+        self.port = port
         self.period = 1 / self.fps
         self.deadline = None
         self.frame_number = 0
-        self.finished = False
-        self.status_updated = time.perf_counter()
 
-        width, height = self.size
-        ok, blank = cv2.imencode(".jpg", np.zeros((height, width, 3), dtype=np.uint8))
-        self.image = Image(
-            value=blank.tobytes() if ok else b"", format="jpeg", width=width, height=height,
-            layout=Layout(max_width="100%"),
-        )
-        self.status = HTML(value="<span style='font:13px monospace;color:#666'>Waiting for video…</span>")
-        self.widget = VBox([self.image, self.status], layout=Layout(width=f"{width}px", max_width="100%"))
+        self.lock = threading.Lock()
+        self.jpeg = None
+        self.sequence = 0
+        self.finished = False
+        self.stop_event = threading.Event()
+        self.ready = threading.Event()
+        self.loop = asyncio.new_event_loop()
+
+        threading.Thread(target=self._serve, daemon=True).start()
+        if not self.ready.wait(5):
+            raise RuntimeError("The live WebSocket server did not start")
 
         _ACTIVE_CANVAS = self
-        display(self.widget)
+        self._show()
+
+    async def _websocket(self, request):
+        socket = web.WebSocketResponse(heartbeat=20)
+        await socket.prepare(request)
+        last = -1
+        try:
+            while not self.stop_event.is_set():
+                with self.lock:
+                    jpeg, sequence, finished = self.jpeg, self.sequence, self.finished
+
+                if jpeg is not None and sequence != last:
+                    transport = request.transport
+                    if transport is not None and transport.get_write_buffer_size() < 256 * 1024:
+                        await socket.send_bytes(jpeg)
+                        last = sequence
+
+                if finished and jpeg is not None and last == sequence:
+                    break
+                await asyncio.sleep(0.002)
+        except (ConnectionResetError, RuntimeError, asyncio.CancelledError):
+            pass
+        await socket.close()
+        return socket
+
+    async def _status(self, _):
+        return web.json_response({"frame": self.frame_number, "source_fps": self.fps})
+
+    def _serve(self):
+        asyncio.set_event_loop(self.loop)
+        app = web.Application()
+        app.router.add_get("/ws", self._websocket)
+        app.router.add_get("/status.json", self._status)
+        self.runner = web.AppRunner(app)
+        self.loop.run_until_complete(self.runner.setup())
+        self.site = web.TCPSite(self.runner, "127.0.0.1", self.port)
+        self.loop.run_until_complete(self.site.start())
+        self.ready.set()
+        self.loop.run_forever()
 
     def _draw(self, result):
         frame = result.orig_img.copy()
@@ -66,22 +126,18 @@ class LiveCanvas:
         return frame
 
     def write(self, result):
-        """Render and publish one Ultralytics result."""
+        """Render and publish the newest tracking result."""
         rendered = self._draw(result)
-        now = time.perf_counter()
         ok, jpeg = cv2.imencode(
             ".jpg", rendered, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
         )
         if ok:
-            self.image.value = jpeg.tobytes()
-            self.frame_number += 1
-            if now - self.status_updated >= 1:
-                self.status.value = (
-                    f"<span style='font:13px monospace;color:#666'>"
-                    f"Live stream · frame {self.frame_number} · {self.fps:.0f} FPS</span>"
-                )
-                self.status_updated = now
+            with self.lock:
+                self.jpeg = jpeg.tobytes()
+                self.sequence += 1
+                self.frame_number += 1
 
+        now = time.perf_counter()
         self.deadline = now if self.deadline is None else self.deadline
         self.deadline += self.period
         delay = self.deadline - time.perf_counter()
@@ -91,15 +147,80 @@ class LiveCanvas:
             self.deadline = time.perf_counter()
 
     def finish(self):
-        """Mark the current stream as complete."""
-        self.finished = True
-        self.status.value = (
-            f"<span style='font:13px monospace;color:#666'>"
-            f"Video complete · {self.frame_number} frames</span>"
-        )
+        """End the stream after its newest frame is delivered."""
+        with self.lock:
+            self.finished = True
+
+    def _show(self):
+        width, height = self.size
+        suffix = time.time_ns()
+        canvas_id = f"live-canvas-{suffix}"
+        status_id = f"live-status-{suffix}"
+        websocket_path = f"{_jupyter_base_url()}proxy/{self.port}/ws"
+
+        display(HTML(
+            f'<div style="max-width:{width}px">'
+            f'<canvas id="{canvas_id}" width="{width}" height="{height}" '
+            f'style="display:block;width:100%;background:#111"></canvas>'
+            f'<div id="{status_id}" style="font:13px monospace;color:#666">Connecting…</div>'
+            f'</div>'
+        ))
+        display(Javascript(f"""
+        (() => {{
+          const canvas = document.getElementById({json.dumps(canvas_id)});
+          const status = document.getElementById({json.dumps(status_id)});
+          const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const socket = new WebSocket(protocol + '//' + location.host + {json.dumps(websocket_path)});
+          socket.binaryType = 'blob';
+
+          let pending = null;
+          let drawing = false;
+          let frames = 0;
+          let tick = performance.now();
+
+          const drawLatest = async () => {{
+            if (drawing || pending === null) return;
+            drawing = true;
+            const blob = pending;
+            pending = null;
+            try {{
+              const image = await createImageBitmap(blob);
+              canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+              image.close();
+              frames++;
+              const now = performance.now();
+              if (now - tick >= 1000) {{
+                status.textContent = `Live stream · ${{(frames * 1000 / (now - tick)).toFixed(1)}} FPS`;
+                frames = 0;
+                tick = now;
+              }}
+            }} catch (error) {{
+              status.textContent = 'Frame decode failed';
+            }} finally {{
+              drawing = false;
+              if (pending !== null) drawLatest();
+            }}
+          }};
+
+          socket.onopen = () => status.textContent = 'Live stream connected';
+          socket.onmessage = event => {{
+            pending = event.data;
+            drawLatest();
+          }};
+          socket.onerror = () => status.textContent = 'Live stream connection failed';
+          socket.onclose = () => status.textContent = 'Live stream ended';
+        }})();
+        """))
 
     def stop(self):
-        if self.finished:
+        if self.stop_event.is_set():
             return
-        self.finished = True
-        self.widget.close()
+        self.stop_event.set()
+        if hasattr(self, "runner") and self.loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(self.runner.cleanup(), self.loop)
+            try:
+                future.result(timeout=3)
+            except Exception:
+                pass
+        if self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)
