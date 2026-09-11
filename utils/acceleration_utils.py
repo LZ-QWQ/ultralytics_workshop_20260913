@@ -1,6 +1,9 @@
 """Plotting helpers for the workshop notebook."""
 
+from io import BytesIO
+
 import matplotlib.pyplot as plt
+from IPython.display import display
 
 
 def plot_backend_benchmark(results) -> None:
@@ -22,5 +25,7 @@ def plot_backend_benchmark(results) -> None:
     ax.bar_label(ax.containers[0], fmt="%.1f")
     plt.xticks(rotation=0)
     plt.tight_layout()
-    plt.show()
+    image = BytesIO()
+    ax.figure.savefig(image, format="png", dpi=100, bbox_inches="tight")
     plt.close(ax.figure)
+    display({"image/png": image.getvalue()}, raw=True)
