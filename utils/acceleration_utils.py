@@ -8,21 +8,19 @@ from IPython.display import display
 
 def plot_backend_benchmark(results) -> None:
     """Plot inference throughput measured in the notebook."""
-    labels = results.apply(
-        lambda row: f"{row['Backend']}\n{row['Precision']} · batch {row['Batch']}", axis=1
+    throughput = results.pivot(index="Batch", columns="Backend", values="Throughput (images/s)")
+    ax = throughput[["PyTorch", "MIGraphX"]].plot.bar(
+        color=["#666666", "#ED1C24"], figsize=(9.5, 4.5), width=0.72,
     )
-    ax = results.assign(Configuration=labels).plot.bar(
-        x="Configuration", y="Throughput (images/s)", legend=False,
-        color="#777777", figsize=(11, 4.5),
-    )
-    colors = ["#666666", "#AAAAAA", "#666666", "#AAAAAA", "#B5121B", "#ED1C24"]
-    for bar, color in zip(ax.patches, colors):
-        bar.set_color(color)
-    ax.axvline(1.5, color="#DDDDDD", linewidth=1)
-    ax.axvline(3.5, color="#DDDDDD", linewidth=1)
-    ax.set_ylabel("Throughput (images/s) — higher is better")
-    ax.set_title("YOLO26n-OBB inference throughput on W7900D")
-    ax.bar_label(ax.containers[0], fmt="%.1f")
+    for bars in ax.containers:
+        ax.bar_label(bars, fmt="%.0f", padding=3)
+    ax.set_xlabel("Batch size")
+    ax.set_ylabel("Images/s — higher is better")
+    ax.set_title("YOLO26n-OBB FP16 throughput on W7900D")
+    ax.legend(title=None, frameon=False)
+    ax.grid(axis="y", color="#E6E6E6", linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.margins(y=0.12)
     plt.xticks(rotation=0)
     plt.tight_layout()
     image = BytesIO()
