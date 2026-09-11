@@ -15,7 +15,7 @@ _ACTIVE_CANVAS = None
 class LiveCanvas:
     """Render every tracking result while rate-limiting browser updates."""
 
-    def __init__(self, fps=30.0, size=(960, 540), jpeg_quality=50, display_fps=15.0):
+    def __init__(self, fps=30.0, size=(960, 540), jpeg_quality=50, display_fps=30.0):
         global _ACTIVE_CANVAS
         if _ACTIVE_CANVAS is not None:
             _ACTIVE_CANVAS.stop()
