@@ -1,18 +1,1 @@
-# Advanced fine-tuning defaults. The main workshop knobs stay in model.train().
-optimizer: AdamW
-lr0: 0.001
-weight_decay: 0.0005
-warmup_epochs: 0.5
-
-amp: true
-cache: ram
-mosaic: 0.0
-val: false
-
-workers: 8
-plots: false
-verbose: false
-deterministic: false
-
-name: coco_to_sheep_obb_5min
-exist_ok: true
+deterministic: true
