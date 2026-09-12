@@ -101,7 +101,7 @@ def browse_pretrained_coco_predictions(model):
 
     @lru_cache(maxsize=64)
     def render(image: str) -> tuple[bytes, str]:
-        result = model.predict(image, classes=[18], end2end=False, verbose=False)[0]
+        result = model.predict(image, classes=[18], imgsz=768, end2end=False, verbose=False)[0]
         preview = _encode_preview(result.plot(labels=True, conf=True, line_width=2), (640, 360))
         return preview, f"{len(result.boxes)} sheep detected"
 
@@ -130,10 +130,10 @@ def browse_finetuning_comparison(coco_model, tuned_model):
     def render(filename: str):
         image = f"/datasets/sheep-datasets/images/test/{filename}"
         before = coco_model.predict(
-            image, classes=[sheep_id], imgsz=640, quantize="fp16", end2end=False, verbose=False
+            image, classes=[sheep_id], imgsz=768, quantize="fp16", end2end=False, verbose=False
         )[0]
         after = tuned_model.predict(
-            image, imgsz=640, quantize="fp16", end2end=False, verbose=False
+            image, imgsz=768, quantize="fp16", end2end=False, verbose=False
         )[0]
         return (
             (_encode_preview(before.plot(labels=False, conf=False, line_width=2), (640, 360)),
