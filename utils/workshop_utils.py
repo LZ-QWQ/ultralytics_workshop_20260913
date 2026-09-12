@@ -143,8 +143,8 @@ def browse_finetuning_comparison(coco_model, tuned_model):
         )
 
     return side_by_side_previews(
-        image_slider_panel("COCO HBB", samples, "auth_v2_00330.jpg", lambda filename: render(filename)[0]),
-        image_slider_panel("Fine-tuned Sheep OBB", samples, "auth_v2_00330.jpg", lambda filename: render(filename)[1]),
+        image_slider_panel("COCO HBB", samples, "auth_v3_00330.jpg", lambda filename: render(filename)[0]),
+        image_slider_panel("Fine-tuned Sheep OBB", samples, "auth_v3_00330.jpg", lambda filename: render(filename)[1]),
         linked=True,
     )
 
