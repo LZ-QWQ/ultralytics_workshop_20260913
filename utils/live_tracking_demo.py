@@ -103,7 +103,7 @@ class LiveCanvas:
         if now - self.status_updated >= 1:
             self.status.value = (
                 f"<span style='font:13px monospace;color:#666'>"
-                f"Tracking {self.fps:.0f} FPS · displaying {self.display_fps:.0f} FPS</span>"
+                f"Source {self.fps:.0f} FPS · display cap {self.display_fps:.0f} FPS</span>"
             )
             self.status_updated = now
 
